@@ -1,102 +1,88 @@
-# cufel-deepagent (DeepAgent — equivalent reimplementation)
+# DeepAgent — an autonomous agent with planning, skills, subagents & MCP tools
 
 **English** · [中文](README.zh-CN.md)
 
-A learning project that builds a **deep agent** — an LLM agent with planning, a
-filesystem/memory, on-demand **skills**, delegatable **subagents**, and **MCP**
-(Model Context Protocol) tools — on top of the public
-[`langchain-ai/deepagents`](https://github.com/langchain-ai/deepagents) framework.
+An autonomous **deep agent** built on LangChain's
+[`deepagents`](https://github.com/langchain-ai/deepagents) and LangGraph. It plans
+multi-step tasks, reads and writes files in a sandboxed workspace, loads reusable
+**skills** on demand, delegates to specialized **subagents**, and calls external
+tools over **MCP** (Model Context Protocol). A lightweight finance theme — company
+lookups, a simulated market-data MCP server, and a "market briefing" skill — wires
+the pieces together end to end, and the CLI adds persistent conversation memory.
 
-It corresponds to Lecture 4 ("DeepAgent") of the CUFEL course. This is a
-**standalone project**, not an extension of the Lecture 3 bot: Lecture 3 covers
-the FunctionCall paradigm; Lecture 4 rebuilds under the DeepAgent paradigm,
-adding five capabilities on top of plain function-calling.
+> Model-agnostic by design: any OpenAI-compatible endpoint works. This build is
+> wired to Alibaba **Qwen** via DashScope.
 
-> The course's own `cufel-deepagent` framework isn't publicly downloadable, so
-> this repo is a functionally equivalent implementation on public `deepagents`,
-> deliberately structured to mirror the course's `src/cufel_deepagent/...` layout
-> so the exercises map one-to-one.
+## What it demonstrates
+- **Agentic architecture on LangGraph** — a planning / tool-calling loop with automatic context summarization and recursion control, via the `deepagents` harness.
+- **Skills with progressive disclosure** — drop a `SKILL.md` into `skills/`; the agent sees only its name and description until a task matches, then reads the full instructions on demand.
+- **Subagent delegation** — a built-in `task` tool spawns isolated subagents for self-contained, context-heavy work.
+- **MCP tool integration** — tools are served by a separate process over stdio and loaded dynamically with `langchain-mcp-adapters`.
+- **Sandboxed filesystem** — the agent's file tools operate through a virtual filesystem confined to the project directory.
+- **Persistent memory** — conversations serialize to JSON and reload across sessions.
+- **Bilingual output** — `--lang en | zh | auto`.
 
-## The five capabilities ↔ where they live
+## Architecture
 
 | Capability | Implementation |
 | --- | --- |
-| Planning | deepagents' built-in `write_todos` (auto-loaded) |
-| Filesystem / memory carrier | `FilesystemBackend(virtual_mode=True)`, virtual root anchored to the project |
-| Skill | `skills/<name>/SKILL.md` (with YAML frontmatter) |
-| SubAgent | `subagents=[...]` in `agent.py`, invoked via the built-in `task` tool |
-| External services (MCP) | `src/cufel_deepagent/mcp/mcp.py` |
-| Tool | `src/cufel_deepagent/tools/tools.py` |
-
-## Project layout
+| Planning | built-in `write_todos` todo-list loop |
+| Filesystem / memory | `FilesystemBackend(virtual_mode=True)`, rooted at the project |
+| Skills | `skills/<name>/SKILL.md` (YAML frontmatter) |
+| Subagents | `subagents=[...]`, invoked via the `task` tool |
+| External tools (MCP) | servers registered in `mcp/mcp.py` |
+| Custom tools | `@tool` functions in `tools/tools.py` |
 
 ```
 deep-agent/
-├── main.py                       # entry point (forwards to cufel_deepagent.cli)
+├── main.py                       # CLI entry point
 ├── pyproject.toml                # dependencies (managed by uv)
-├── .env.example                  # config template → copy to .env and fill your key
+├── .env.example                  # config template → copy to .env
 ├── skills/
 │   └── market-briefing/SKILL.md  # example skill: single-stock briefing
-├── memories/                     # conversation history (written with -c; gitignored)
+├── memories/                     # conversation history (with -c; gitignored)
 └── src/cufel_deepagent/
-    ├── config.py                 # env vars + Qwen LLM factory (swap models in one place)
-    ├── agent.py                  # assembles the DeepAgent (model+tools+skills+subagents+backend+MCP)
+    ├── config.py                 # env + model factory (swap models in one place)
+    ├── agent.py                  # assembles model + tools + skills + subagents + backend + MCP
     ├── cli.py                    # command-line logic
-    ├── tools/tools.py            # custom tools (the agent's "hands")
+    ├── tools/tools.py            # custom tools
     └── mcp/
-        ├── mcp.py                # MCP server config (toggle servers here)
-        └── servers/stock_server.py  # local "simulated stock market" MCP example
+        ├── mcp.py                # MCP server registry
+        └── servers/stock_server.py  # local simulated market-data MCP server
 ```
 
-## Requirements
-- [uv](https://docs.astral.sh/uv/) (dependency & virtualenv manager)
-- Node.js (some MCP servers need `npx`; the bundled simulated MCP is pure Python, so it's optional)
-- Python 3.12 (uv provisions it automatically from `.python-version`)
+## Tech stack
+LangGraph · langchain-deepagents · langchain-mcp-adapters · MCP · Alibaba Qwen (DashScope, OpenAI-compatible) · uv · Python 3.12
 
 ## Quickstart
 
 ```bash
-# 1. Install dependencies (restores the environment from uv.lock)
-uv sync
-
-# 2. Configure: copy the template and fill in your DashScope key
-cp .env.example .env        # then edit .env and set QWEN_API
-
-# 3. (optional) Offline self-check: verifies tools / MCP / skills / assembly
-uv run main.py --check
-
-# 4. Ask
-uv run main.py --run "What can you do?"
-uv run main.py --run "Give me a single-stock snapshot of AAPL and 600519"
-
-# 5. Interactive mode (-c persists the conversation to memories/demo.json)
-uv run main.py -i -c demo
+uv sync                       # install (restores from uv.lock)
+cp .env.example .env          # then set QWEN_API in .env
+uv run main.py --check        # offline self-check: tools / MCP / skills / assembly
+uv run main.py --run "Give me a single-stock snapshot of AAPL and TSLA"
+uv run main.py -i -c demo     # interactive, with conversation memory
 ```
 
 ### Response language
-The agent replies in **English** by default. Override per run with `--lang`, or set
-`AGENT_LANG` in `.env`:
+Defaults to English. Switch per run with `--lang`, or set `AGENT_LANG` in `.env`:
 
-```bash
-uv run main.py --run "What can you do?"      --lang en    # English (default)
-uv run main.py --run "Summarize your tools"  --lang zh    # force a Chinese reply
-uv run main.py -i --lang auto                             # mirror the user's language
-```
+| Flag | Result |
+| --- | --- |
+| `--lang en` | English (default) |
+| `--lang zh` | Chinese |
+| `--lang auto` | mirror the user's language |
 
 ## How it works
-1. `config.get_model()` uses `langchain-openai`'s `ChatOpenAI`, pointed at
-   DashScope's OpenAI-compatible endpoint, to call Qwen.
-2. `agent.build_agent()` hands the model, tools, `skills/`, subagents, MCP tools,
-   and a `FilesystemBackend` to `create_deep_agent()`, which compiles a graph.
-3. `cli.py` sends your question as a `HumanMessage` to `agent.ainvoke()`; with
-   `-c`, the full conversation is serialized to `memories/<name>.json` via
-   `messages_to_dict` and reloaded next time.
+1. `config.get_model()` builds a `ChatOpenAI` client pointed at an OpenAI-compatible endpoint (DashScope / Qwen).
+2. `agent.build_agent()` passes the model, tools, `skills/`, subagents, MCP tools, and a `FilesystemBackend` to `create_deep_agent()`, which compiles a LangGraph graph.
+3. `cli.py` sends each turn as a `HumanMessage` to `agent.ainvoke()`; with `-c`, the full message history is serialized to `memories/<name>.json` and reloaded next run.
 
-## Continuing the course
-- **Add a tool**: write a new `@tool` function in `tools/tools.py` and add it to `TOOLS`.
-- **Add a skill**: create `skills/<name>/SKILL.md` (frontmatter `name` must equal the directory name).
-- **Add an MCP server**: add an entry to `MCP_SERVERS` in `mcp/mcp.py` (e.g. the World Bank macro MCP from the exercises).
+## Extending it
+- **Add a tool** — write a `@tool` function in `tools/tools.py` and add it to `TOOLS`.
+- **Add a skill** — create `skills/<name>/SKILL.md` (frontmatter `name` must match the directory name).
+- **Add an MCP server** — add an entry to `MCP_SERVERS` in `mcp/mcp.py` (stdio or HTTP).
 
-> Security note: `FilesystemBackend` lets the agent read and write files; this
-> project uses `virtual_mode=True` to confine it to the project directory. Don't
-> set the root to `/` or your home directory.
+## Notes
+- **Demo data is simulated** — company fundamentals and quotes are illustrative, not real market data.
+- **Security** — `FilesystemBackend` runs with `virtual_mode=True` to confine file access to the project directory.
