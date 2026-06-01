@@ -1,0 +1,17 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Local secrets and conversation memory (do not commit)
+.env
+memories/*.json
+
+# Artifacts the agent may write out
+/briefings/
